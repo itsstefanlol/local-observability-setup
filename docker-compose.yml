@@ -1,0 +1,148 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+    container_name: demo-nextjs-frontend
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8080
+
+      # Send traces directly from Next.js to Tempo using OTLP HTTP
+      OTEL_SERVICE_NAME: nextjs-frontend
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+      - tempo
+    networks:
+      - observability
+
+  backend:
+    build:
+      context: ./backend
+    container_name: demo-dotnet-backend
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=appdb;Username=appuser;Password=apppassword;Maximum Pool Size=20;Minimum Pool Size=2
+      SlowQueryThresholdMs: 250
+
+      # Send traces directly from .NET to Tempo using OTLP gRPC
+      OTEL_SERVICE_NAME: dotnet-backend
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tempo:
+        condition: service_started
+    networks:
+      - observability
+
+  postgres:
+    image: postgres:16
+    container_name: demo-postgres
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppassword
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - observability
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    container_name: demo-tempo
+    user: "0:0"
+    command:
+      - "-config.file=/etc/tempo/tempo.yml"
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/tmp/tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - observability
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: demo-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+      - cadvisor
+      - node-exporter
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: demo-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - tempo
+    networks:
+      - observability
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: demo-cadvisor
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - observability
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: demo-node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - observability
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+  tempo-data:
+
+networks:
+  observability:
+    driver: bridge
