@@ -22,7 +22,7 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "DB Health From Backend",
+      "title": "DB Health",
       "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
@@ -92,7 +92,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(backend_db_query_duration_seconds_bucket[5m])) by (le, query_name))",
+          "expr": "histogram_quantile(0.95, sum(rate(backend_db_query_duration_seconds_bucket[$__rate_interval])) by (le, query_name))",
           "legendFormat": "{{query_name}}"
         }
       ]
@@ -118,27 +118,105 @@
       "id": 9,
       "type": "timeseries",
       "title": "Container CPU Usage",
-      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
-          "expr": "container_cpu_usage_seconds_total{name!=\"\"}[1m]",
-          "legendFormat": "{{name}}"
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{job=\"cadvisor\", container_label_com_docker_compose_service!=\"\", id!=\"/\"}[$__rate_interval]))",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     },
     {
       "id": 10,
       "type": "timeseries",
       "title": "Container Memory Usage",
-      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
-          "expr": "container_memory_usage_bytes",
-          "legendFormat": "{{name}}"
+          "expr": "sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{job=\"cadvisor\", container_label_com_docker_compose_service!=\"\", id!=\"/\"})",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "User Journeys through Traces",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "targets": [
+        {
+          "query": "{ resource.service.name = \"nextjs-frontend\" }",
+          "queryType": "traceql",
+          "refId": "A",
+          "limit": 20,
+          "spanLimit": 20,
+          "tableType": "traces"
+        }
+      ],
+      "options": {
+        "showTraceID": true,
+        "showSpanBar": true
+      }
     }
+
   ]
 }

@@ -23,8 +23,16 @@ async function proxyRequest(
       kind: SpanKind.SERVER,
       attributes: {
         "http.method": request.method,
-        "http.route": `/api/backend/${path}`,
-        "http.target": targetUrl
+        "http.route": "/api/backend/[...path]",
+        "http.target": targetUrl,
+        "backend.route": `/${path}`,
+        "app.flow": "frontend-to-backend-to-database",
+        "journey.name":
+          path === "slow-query"
+            ? "Run Slow Query"
+            : path === "orders"
+              ? "Load Orders"
+              : path
       }
     },
     async (span) => {

@@ -24,6 +24,7 @@ builder.Services.AddOpenTelemetry()
             .AddNpgsql()
             .AddOtlpExporter();
     });
+    
 
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
     ?? throw new InvalidOperationException("Missing PostgreSQL connection string");
@@ -84,6 +85,8 @@ await using var dataSource = dataSourceBuilder.Build();
 
 var app = builder.Build();
 
+var logger = app.Logger;
+
 app.UseHttpMetrics();
 
 await InitializeDatabase(dataSource);
@@ -118,46 +121,144 @@ app.MapGet("/", async () =>
 
 app.MapGet("/orders", async () =>
 {
-    var rows = await ExecuteOrdersQuery(dataSource);
+    var queryName = "select_recent_orders";
+    var stopwatch = Stopwatch.StartNew();
 
-    return Results.Ok(rows);
+    try
+    {
+        var rows = await ExecuteOrdersQuery(dataSource);
+
+        stopwatch.Stop();
+
+        var activity = Activity.Current;
+
+        logger.LogInformation(
+            "Database query completed. query_name={QueryName} duration_ms={DurationMs} trace_id={TraceId} span_id={SpanId} status={Status}",
+            queryName,
+            stopwatch.ElapsedMilliseconds,
+            activity?.TraceId.ToString(),
+            activity?.SpanId.ToString(),
+            "success");
+
+        return Results.Ok(rows);
+    }
+    catch (Exception ex)
+    {
+        stopwatch.Stop();
+
+        var activity = Activity.Current;
+
+        logger.LogError(
+            ex,
+            "Database query failed. query_name={QueryName} duration_ms={DurationMs} trace_id={TraceId} span_id={SpanId} status={Status}",
+            queryName,
+            stopwatch.ElapsedMilliseconds,
+            activity?.TraceId.ToString(),
+            activity?.SpanId.ToString(),
+            "error");
+
+        throw;
+    }
 });
 
 app.MapGet("/slow-query", async () =>
 {
-    var result = await ExecuteScalar<long>(
-        dataSource,
-        "intentional_slow_query",
-        """
-        SELECT COUNT(*) FROM demo_orders, pg_sleep(0.6);
-        """);
+    var queryName = "intentional_slow_query";
+    var stopwatch = Stopwatch.StartNew();
 
-    return Results.Ok(new
+    try
     {
-        message = "Intentional slow query executed",
-        orderCount = result
-    });
+        var result = await ExecuteScalar<long>(
+            dataSource,
+            queryName,
+            """
+            SELECT COUNT(*) FROM demo_orders, pg_sleep(0.6);
+            """);
+
+        stopwatch.Stop();
+
+        var activity = Activity.Current;
+
+        logger.LogInformation(
+            "Slow database query completed. query_name={QueryName} duration_ms={DurationMs} trace_id={TraceId} span_id={SpanId} status={Status}",
+            queryName,
+            stopwatch.ElapsedMilliseconds,
+            activity?.TraceId.ToString(),
+            activity?.SpanId.ToString(),
+            "success");
+
+        return Results.Ok(new
+        {
+            message = "Intentional slow query executed",
+            orderCount = result
+        });
+    }
+    catch (Exception ex)
+    {
+        stopwatch.Stop();
+
+        var activity = Activity.Current;
+
+        logger.LogError(
+            ex,
+            "Slow database query failed. query_name={QueryName} duration_ms={DurationMs} trace_id={TraceId} span_id={SpanId} status={Status}",
+            queryName,
+            stopwatch.ElapsedMilliseconds,
+            activity?.TraceId.ToString(),
+            activity?.SpanId.ToString(),
+            "error");
+
+        throw;
+    }
 });
 
 app.MapGet("/db-health", async () =>
 {
+    var queryName = "db_health_check";
+    var stopwatch = Stopwatch.StartNew();
+
     try
     {
         await ExecuteScalar<int>(
             dataSource,
-            "db_health_check",
+            queryName,
             "SELECT 1;");
 
+        stopwatch.Stop();
+
         dbHealthStatus.Set(1);
+
+        var activity = Activity.Current;
+
+        logger.LogInformation(
+            "Database health check completed. query_name={QueryName} duration_ms={DurationMs} trace_id={TraceId} span_id={SpanId} status={Status}",
+            queryName,
+            stopwatch.ElapsedMilliseconds,
+            activity?.TraceId.ToString(),
+            activity?.SpanId.ToString(),
+            "success");
 
         return Results.Ok(new
         {
             database = "healthy"
         });
     }
-    catch
+    catch (Exception ex)
     {
+        stopwatch.Stop();
+
         dbHealthStatus.Set(0);
+
+        var activity = Activity.Current;
+
+        logger.LogError(
+            ex,
+            "Database health check failed. query_name={QueryName} duration_ms={DurationMs} trace_id={TraceId} span_id={SpanId} status={Status}",
+            queryName,
+            stopwatch.ElapsedMilliseconds,
+            activity?.TraceId.ToString(),
+            activity?.SpanId.ToString(),
+            "error");
 
         return Results.Problem("Database is unhealthy.");
     }
