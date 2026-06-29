@@ -216,7 +216,37 @@
         "showTraceID": true,
         "showSpanBar": true
       }
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "Backend Application Logs",
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 36        
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=\"backend\"} |= \"query_name\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
     }
-
   ]
 }
